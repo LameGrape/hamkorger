@@ -1,0 +1,184 @@
+import struct
+import os
+
+class BinaryReader:
+    def __init__(self, stream):
+        self.data = stream.read()
+        self.index = 0
+
+    def read(self, count):
+        result = bytes(self.data[self.index : self.index + count])
+        self.index += count
+        return result
+    def skip(self, count): self.index += count
+    def seek(self, offset): self.index = offset
+    def position(self): return self.index
+        
+    def byte(self): return struct.unpack("<B", self.read(1))[0]
+    def sbyte(self): return struct.unpack("<b", self.read(1))[0]
+    def short(self): return struct.unpack("<h", self.read(2))[0]
+    def ushort(self): return struct.unpack("<H", self.read(2))[0]
+    def int(self): return struct.unpack("<i", self.read(4))[0]
+    def uint(self): return struct.unpack("<I", self.read(4))[0]
+    def long(self): return struct.unpack("<q", self.read(8))[0]
+    def ushort(self): return struct.unpack("<Q", self.read(8))[0]
+
+    def bool(self): return struct.unpack("<?", self.read(1))[0]
+    def string(self, size): return self.read(size).decode().strip("\0")
+
+class BinaryWriter:
+    def __init__(self, stream):
+        self.stream = stream
+
+    def write(self, data): self.stream.write(data)
+    def pad(self, count): self.stream.write(bytes(0 for i in range(count)))
+    def position(self): return self.stream.tell()
+    def seek(self, offset): self.stream.seek(offset)
+
+    def byte(self, data): self.write(struct.pack(">B", data))
+    def sbyte(self, data): self.write(struct.pack(">b", data))
+    def short(self, data): self.write(struct.pack(">h", data))
+    def ushort(self, data): self.write(struct.pack(">H", data))
+    def int(self, data): self.write(struct.pack(">i", data))
+    def uint(self, data): self.write(struct.pack(">I", data))
+    def long(self, data): self.write(struct.pack(">q", data))
+    def ushort(self, data): self.write(struct.pack(">Q", data))
+
+    def bool(self, data): self.write(struct.pack(">?", data))
+    def string(self, data): self.write(data.encode())
+
+def getSongs(path):
+    if not os.path.isfile(path): return None
+    reader = BinaryReader(open(path, "rb"))
+    songs = []
+    reader.skip(4)
+    if reader.string(4) != "M01W": return None
+    reader.skip(4)
+    for i in range(10):
+        song = {
+            "modified": reader.bool(),
+            "name": reader.string(8),
+            "channels": [],
+            "blockTempos": [],
+            "blockSteps": []
+        }
+        songs.append(song)
+        reader.skip(31)
+
+    for i, song in enumerate(songs):
+        reader.seek(0x1000 + 0xC000 * i)
+        reader.skip(13)
+        for i in range(8):
+            channel = {
+                "attack": reader.byte(),
+                "release": reader.byte(),
+                "blocks": [],
+            }
+            song["channels"].append(channel)
+            reader.skip(54)
+        reader.skip(57)
+        song["tempo"] = reader.short()
+        song["swing"] = reader.byte()
+        song["steps"] = reader.byte()
+        reader.skip(4)
+        musicPos = reader.short() + reader.position()
+        for i in range(99):
+            song["blockTempos"].append(reader.short())
+            song["blockSteps"].append(reader.byte())
+            reader.skip(5)
+        reader.seek(musicPos)
+        for i in range(99):
+            for j in range(8):
+                reader.skip(4)
+                offset = reader.byte()
+                reader.skip(1)
+                noteCount = reader.short()
+                if noteCount <= 0: continue
+                block = {
+                    "offset": offset,
+                    "notes": []
+                }
+                for i in range(noteCount):
+                    note = {
+                        "length": (reader.byte() + 1) / 4,
+                        "velocity": reader.byte(),
+                        "pitch": reader.byte(),
+                        "offset": reader.byte()
+                    }
+                    block["notes"].append(note)
+                song["channels"][j]["blocks"].append(block)
+    return songs
+
+def exportSong(song):
+    writer = BinaryWriter(open(f"{song["name"]}.mid", "wb"))
+    writer.string("MThd")
+    writer.int(6)
+    writer.short(0)
+    writer.short(1)
+    writer.short(400)
+    notes = []
+    lastTempo = song["tempo"]
+    offsets = [0]
+    for i, steps in enumerate(song["blockSteps"]):
+        offsets.append(offsets[i] + (song["steps"] if song["blockSteps"][i] == 0 else song["blockSteps"][i]))
+    for i, channel in enumerate(channel for channel in song["channels"] if len(channel["blocks"]) > 0):
+        for block in channel["blocks"]:
+            tempo = song["tempo"] if song["blockTempos"][block["offset"]] == 0 else song["blockTempos"][block["offset"]]
+            if tempo != lastTempo:
+                notes.append((0, offsets[block["offset"]], tempo, -1))
+            lastTempo = tempo
+            for note in block["notes"]:
+                offset = offsets[block["offset"]]
+                notes.append((i, note["offset"] + offset, note["pitch"], note["velocity"]))
+                notes.append((i, note["offset"] + note["length"] + offset, note["pitch"], 0))
+    notes.sort(key=lambda x: x[1] * 100 + x[3] + 1)
+    writer.string("MTrk")
+    lengthPos = writer.position()
+    writer.pad(4)
+    writer.write(bytes((0x00, 0xFF, 0x51, 0x03)))
+    writer.write(struct.pack(">I", int(1000**2 / (song["tempo"] / 60)))[1:])
+    lastOffset = 0
+    for note in notes:
+        writeVarLen((note[1] - lastOffset) * 100, writer)
+        if(note[3] == -1):
+            writer.write(bytes((0xFF, 0x51, 0x03)))
+            writer.write(struct.pack(">I", int(1000**2 / (note[2] / 60)))[1:])
+        else:
+            writer.byte((0x90 if note[3] > 0 else 0x80) + note[0])
+            writer.byte(note[2] - 128)
+            writer.byte(int(note[3] / 15 * 127))
+            lastOffset = note[1]
+        pass
+    writer.write(bytes((0x00, 0xFF, 0x2F, 0x00)))
+    length = writer.position() - lengthPos - 4
+    writer.seek(lengthPos)
+    writer.int(length)
+
+def writeVarLen(value, writer):
+    value = int(value)
+    buffer = value & 0x7f
+    while (value := value >> 7) > 0:
+        buffer <<= 8
+        buffer |= 0x80
+        buffer += value & 0x7f
+    while (True):
+        writer.write(struct.pack(">I", buffer)[3:])
+        if (buffer & 0x80):
+            buffer >>= 8
+        else:
+            break
+
+if __name__ == "__main__":
+    print("---| hamkorger - Korg M01 MIDI extractor |---\n")
+    print("Enter the .sav file path:")
+    path = input("> ")
+    songs = getSongs(path)
+    if songs is None:
+        print("Invalid save file")
+        exit(1)
+    print("\nEnter the number of the song to export:")
+    for i, song in enumerate(songs):
+        print(f"- {i + 1}{"*" if song["modified"] else ""}: {song["name"]}")
+    selection = int(input("> ")) - 1
+    exportSong(songs[selection])
+    print(f"Done > {songs[selection]["name"]}.mid")
