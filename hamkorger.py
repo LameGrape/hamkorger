@@ -14,7 +14,7 @@ class BinaryReader:
     def skip(self, count): self.index += count
     def seek(self, offset): self.index = offset
     def position(self): return self.index
-        
+
     def byte(self): return struct.unpack("<B", self.read(1))[0]
     def sbyte(self): return struct.unpack("<b", self.read(1))[0]
     def short(self): return struct.unpack("<h", self.read(2))[0]
@@ -209,7 +209,7 @@ if __name__ == "__main__":
     print("---| hamkorger - Korg M01 MIDI extractor |---\n")
     
     print("Enter the .sav file path:")
-    path = input("> ")
+    path = input("> ").strip().strip("\"").strip("'")
     songs = getSongs(path)
     if songs is None:
         print("Invalid save file")
