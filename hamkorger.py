@@ -160,7 +160,7 @@ def exportSong(song):
             for note in block["notes"]:
                 offset = offsets[block["offset"]]
                 swing = ((song["swing"] - 50) / 50) if note["offset"] % 2 == 1 else 0
-                velocity = int(max(127, note["velocity"] / 15 * 127 * channel["volume"] / 100))
+                velocity = int(min(127, (note["velocity"] / 15 * 127) * (channel["volume"] / 100)))
                 notes.append((i, note["offset"] + swing + offset, note["pitch"] - 128, velocity)) # positive velocity for note on
                 notes.append((i, note["offset"] + note["length"] + offset, note["pitch"] - 128, 0)) # zero velocity for note off
 
