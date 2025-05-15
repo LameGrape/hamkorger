@@ -25,7 +25,11 @@ class BinaryReader:
     def ushort(self): return struct.unpack("<Q", self.read(8))[0]
 
     def bool(self): return struct.unpack("<?", self.read(1))[0]
-    def string(self, size): return self.read(size).decode().strip("\0")
+    def string(self, size): return self.read(size).decode()
+    def nullstr(self, max):
+        string = self.read(max).decode()
+        if "\0" in string: return string[:string.index("\0")]
+        return string
 
 class BinaryWriter:
     def __init__(self, stream):
@@ -63,7 +67,7 @@ def getSongs(path):
     for i in range(10):
         song = {
             "modified": reader.bool(),
-            "name": reader.string(8),
+            "name": reader.nullstr(8),
             "channels": [],
             "blockTempos": [],
             "blockSteps": []
@@ -154,7 +158,8 @@ def exportSong(song):
             
             for note in block["notes"]:
                 offset = offsets[block["offset"]]
-                notes.append((i, note["offset"] + offset, note["pitch"], note["velocity"])) # positive velocity for note on
+                swing = ((song["swing"] - 50) / 50) if note["offset"] % 2 == 1 else 0
+                notes.append((i, note["offset"] + swing + offset, note["pitch"], note["velocity"])) # positive velocity for note on
                 notes.append((i, note["offset"] + note["length"] + offset, note["pitch"], 0)) # zero velocity for note off
 
     notes.sort(key=lambda x: x[1] * 100 + x[3] + 1) # magic bullcrap to sort them in the right order
