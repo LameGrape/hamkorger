@@ -84,10 +84,11 @@ def getSongs(path):
             channel = {
                 "attack": reader.byte(),
                 "release": reader.byte(),
+                "volume": reader.byte(),
                 "blocks": [],
             }
             song["channels"].append(channel)
-            reader.skip(54) # probably not important, skip
+            reader.skip(53) # probably not important, skip
         # ive definitely skipped instrument info already but i just havent bothered finding where yet
 
         reader.skip(57) # probably not important, skip
@@ -159,8 +160,9 @@ def exportSong(song):
             for note in block["notes"]:
                 offset = offsets[block["offset"]]
                 swing = ((song["swing"] - 50) / 50) if note["offset"] % 2 == 1 else 0
-                notes.append((i, note["offset"] + swing + offset, note["pitch"], note["velocity"])) # positive velocity for note on
-                notes.append((i, note["offset"] + note["length"] + offset, note["pitch"], 0)) # zero velocity for note off
+                velocity = int(max(127, note["velocity"] / 15 * 127 * channel["volume"] / 100))
+                notes.append((i, note["offset"] + swing + offset, note["pitch"] - 128, velocity)) # positive velocity for note on
+                notes.append((i, note["offset"] + note["length"] + offset, note["pitch"] - 128, 0)) # zero velocity for note off
 
     notes.sort(key=lambda x: x[1] * 100 + x[3] + 1) # magic bullcrap to sort them in the right order
 
@@ -183,8 +185,8 @@ def exportSong(song):
             writer.write(struct.pack(">I", int(1000**2 / (note[2] / 60)))[1:])
         else: # note
             writer.byte((0x90 if note[3] > 0 else 0x80) + note[0]) # note on/off and channel
-            writer.byte(note[2] - 128) # pitch
-            writer.byte(int(note[3] / 15 * 127)) # velocity
+            writer.byte(note[2]) # pitch
+            writer.byte(note[3]) # velocity
             lastOffset = note[1]
         pass
 
