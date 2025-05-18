@@ -22,7 +22,7 @@ class BinaryReader:
     def int(self): return struct.unpack("<i", self.read(4))[0]
     def uint(self): return struct.unpack("<I", self.read(4))[0]
     def long(self): return struct.unpack("<q", self.read(8))[0]
-    def ushort(self): return struct.unpack("<Q", self.read(8))[0]
+    def ulong(self): return struct.unpack("<Q", self.read(8))[0]
 
     def bool(self): return struct.unpack("<?", self.read(1))[0]
     def string(self, size): return self.read(size).decode()
@@ -47,7 +47,7 @@ class BinaryWriter:
     def int(self, data): self.write(struct.pack(">i", data))
     def uint(self, data): self.write(struct.pack(">I", data))
     def long(self, data): self.write(struct.pack(">q", data))
-    def ushort(self, data): self.write(struct.pack(">Q", data))
+    def ulong(self, data): self.write(struct.pack(">Q", data))
 
     def bool(self, data): self.write(struct.pack(">?", data))
     def string(self, data): self.write(data.encode())
@@ -164,7 +164,7 @@ def exportSong(song):
                 notes.append((i, note["offset"] + swing + offset, note["pitch"] - 128, velocity)) # positive velocity for note on
                 notes.append((i, note["offset"] + note["length"] + offset, note["pitch"] - 128, 0)) # zero velocity for note off
 
-    notes.sort(key=lambda x: x[1] * 100 + x[3] + 1) # magic bullcrap to sort them in the right order
+    notes.sort(key=lambda x: (x[1], x[3])) # sort by time offset, then velocity
 
     # midi track
     writer.string("MTrk")
