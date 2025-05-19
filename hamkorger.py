@@ -1,5 +1,14 @@
+import json
 import struct
 import os
+
+
+with open("instruments.json", "r") as f:
+    instruments = json.load(f)
+
+synths = list(instruments.keys())
+categories = list(instruments[synths[0]].keys())
+
 
 # i cant even lie these classes exists cause its fun writing binary readers and writers
 class BinaryReader:
@@ -52,6 +61,7 @@ class BinaryWriter:
     def bool(self, data): self.write(struct.pack(">?", data))
     def string(self, data): self.write(data.encode())
 
+
 # open a .sav file and read out
 def getSongs(path):
     if not os.path.isfile(path): return None
@@ -79,19 +89,26 @@ def getSongs(path):
         reader.seek(0x1000 + 0xC000 * i) # thank you korg devs for storing song data at constant offsets
 
         # channel data
-        reader.skip(13) # probably not important, skip
+        reader.skip(8) # probably not important, skip
+
         for i in range(8):
+            synth_no = reader.byte()
+            category_no = reader.byte()
+            inst_no = reader.byte()
+
+            reader.skip(2)
+
             channel = {
                 "attack": reader.byte(),
                 "release": reader.byte(),
                 "volume": reader.byte(),
                 "blocks": [],
+                "instrument": (synth_no, category_no, inst_no),
             }
             song["channels"].append(channel)
-            reader.skip(53) # probably not important, skip
-        # ive definitely skipped instrument info already but i just havent bothered finding where yet
+            reader.skip(48) # probably not important, skip
 
-        reader.skip(57) # probably not important, skip
+        reader.skip(62) # probably not important, skip
         song["tempo"] = reader.short()
         song["swing"] = reader.byte()
         song["steps"] = reader.byte()
@@ -113,7 +130,7 @@ def getSongs(path):
 
                 noteCount = reader.short()
                 if noteCount <= 0: continue # empty :(
-                
+
                 block = {
                     "offset": offset,
                     "notes": []
@@ -127,8 +144,9 @@ def getSongs(path):
                     }
                     block["notes"].append(note)
                 song["channels"][j]["blocks"].append(block)
-    
+
     return songs
+
 
 # export a song (you should have gotten one ^ up there) to a midi file
 # if my midi implementation sucks you can blame http://www.music.mcgill.ca/~ich/classes/mumt306/StandardMIDIfileformat.html
@@ -150,13 +168,15 @@ def exportSong(song):
     for i, steps in enumerate(song["blockSteps"]):
         offsets.append(offsets[i] + (song["steps"] if song["blockSteps"][i] == 0 else song["blockSteps"][i]))
 
-    for i, channel in enumerate(channel for channel in song["channels"] if len(channel["blocks"]) > 0):
+    for i, channel in enumerate(channel for channel in song["channels"]):
+        if len(channel["blocks"]) == 0:
+            continue
         for block in channel["blocks"]:
             tempo = song["tempo"] if song["blockTempos"][block["offset"]] == 0 else song["blockTempos"][block["offset"]]
             if tempo != lastTempo:
                 notes.append((0, offsets[block["offset"]], tempo, -1)) # negative velocity ensures it comes before notes
             lastTempo = tempo
-            
+
             for note in block["notes"]:
                 offset = offsets[block["offset"]]
                 swing = ((song["swing"] - 50) / 50) if note["offset"] % 2 == 1 else 0
@@ -176,6 +196,15 @@ def exportSong(song):
     writer.write(struct.pack(">I", int(1000**2 / (song["tempo"] / 60)))[1:])
     # midi tempos are stored as "microseconds per beat", not "beats per minute" for some reason
 
+    # set instruments to midi equivalents, if notes exist
+    for i in range(8):
+        if len(song["channels"][i]["blocks"]) == 0:
+            continue
+        synth_no, category_no, inst_no = song["channels"][i]["instrument"]
+        midi_inst_no = instruments[synths[synth_no]][categories[category_no]][inst_no][1]
+        writer.write(bytes((0x00, 0xC0 + i))) # program change
+        writer.byte(midi_inst_no) # instrument number
+
     lastOffset = 0
     for note in notes:
         writeVarLen((note[1] - lastOffset) * 100, writer) # M01 note offsets > MIDI ticks
@@ -187,14 +216,15 @@ def exportSong(song):
             writer.byte((0x90 if note[3] > 0 else 0x80) + note[0]) # note on/off and channel
             writer.byte(note[2]) # pitch
             writer.byte(note[3]) # velocity
-            lastOffset = note[1]
-        pass
+
+        lastOffset = note[1]
 
     writer.write(bytes((0x00, 0xFF, 0x2F, 0x00))) # end of track
 
     length = writer.position() - lengthPos - 4
     writer.seek(lengthPos)
     writer.int(length)  # i told you wed come back
+
 
 # a special data type is used for variable length integers
 # adapted from C code provided by the specification
@@ -212,9 +242,10 @@ def writeVarLen(value, writer):
         else:
             break
 
+
 if __name__ == "__main__":
     print("---| hamkorger - Korg M01 MIDI extractor |---\n")
-    
+
     print("Enter the .sav file path:")
     path = input("> ").strip().strip("\"").strip("'")
     songs = getSongs(path)
