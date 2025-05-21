@@ -4,7 +4,7 @@
 
 ## Usage
 
-hamkorger has no dependencies. Simply download `hamkorger.py` and run it with Python, then follow the prompts. It was written and tested in Python 3.13, but it theoretically should work in lower versions.
+hamkorger has no dependencies. To use it, clone the repository and run `hamkorger.py` with Python, then follow the prompts. It was written and tested in Python 3.13, but it theoretically should work in lower versions.
 
 ## Currently unsupported features
 
