@@ -10,6 +10,5 @@ hamkorger has no dependencies. Simply download `hamkorger.py` and run it with Py
 
 hamkorger is not complete, and while basic exports work, some features of Korg M01 are unsupported or incomplete. If you want to help improve hamkorger, do the github things idk.
 
-- **Instruments**: You still have to manually set the instruments in a DAW.
 - **Attack/Release**: I'm not even sure how this works in MIDI (it doesn't but it does??), or if it's even necessary for it to sound correct.
 - **im probably missing something but i forgot**
