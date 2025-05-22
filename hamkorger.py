@@ -258,20 +258,41 @@ def writeVarLen(value, writer):
             break
 
 
+def songIsEmpty(song):
+    noTempo = song["tempo"] == -1
+    noBlocks = all(len(c["blocks"]) == 0 for c in song["channels"])
+    return noTempo or noBlocks
+
 if __name__ == "__main__":
     print("---| hamkorger - Korg M01 MIDI extractor |---\n")
 
     print("Enter the .sav file path:")
-    path = input("> ").strip().strip("\"").strip("'")
+    try:
+        path = input("> ").strip().strip("\"").strip("'")
+    except KeyboardInterrupt:
+        exit(0)
     songs = getSongs(path)
     if songs is None:
         print("Invalid save file")
         exit(1)
 
     print("\nEnter the number of the song to export:")
+    validSongs = []
     for i, song in enumerate(songs):
+        # Empty songs cause a crash when selected
+        # so just don't show them.
+        if songIsEmpty(song):
+            continue
+        validSongs.append(i)
         print(f"- {i + 1}{"*" if song["modified"] else ""}: {song["name"]}")
-    selection = int(input("> ")) - 1
+    try:
+        selection = int(input("> ")) - 1
+    except KeyboardInterrupt:
+        exit(0)
+    if selection not in validSongs:
+        print("Invalid selection.")
+        exit(1)
+
     exportSong(songs[selection])
 
     print(f"Done > {songs[selection]["name"]}.mid")
