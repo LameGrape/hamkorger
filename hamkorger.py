@@ -196,6 +196,18 @@ def exportSong(song):
     writer.write(struct.pack(">I", int(1000**2 / (song["tempo"] / 60)))[1:])
     # midi tempos are stored as "microseconds per beat", not "beats per minute" for some reason
 
+    midiCCBase = 0xB0
+    midiAttack = 73
+    midiRelease = 72
+
+    def writeMidiCC(channel, control, value):
+        writer.write(bytes((0x00, midiCCBase + channel)))
+        writer.byte(control)
+        # A/R is 0-15 in M01, MIDI CCs are 0-127.
+        # Value scaling should be moved if other CCs
+        # don't follow this.
+        writer.byte(int(value*127/15))
+
     # set instruments to midi equivalents, if notes exist
     for i in range(8):
         if len(song["channels"][i]["blocks"]) == 0:
@@ -204,6 +216,9 @@ def exportSong(song):
         midi_inst_no = instruments[synths[synth_no]][categories[category_no]][inst_no][1]
         writer.write(bytes((0x00, 0xC0 + i))) # program change
         writer.byte(midi_inst_no) # instrument number
+
+        writeMidiCC(i, midiAttack, song["channels"][i]["attack"])
+        writeMidiCC(i, midiRelease, song["channels"][i]["release"])
 
     lastOffset = 0
     for note in notes:
@@ -243,20 +258,41 @@ def writeVarLen(value, writer):
             break
 
 
+def songIsEmpty(song):
+    noTempo = song["tempo"] == -1
+    noBlocks = all(len(c["blocks"]) == 0 for c in song["channels"])
+    return noTempo or noBlocks
+
 if __name__ == "__main__":
     print("---| hamkorger - Korg M01 MIDI extractor |---\n")
 
     print("Enter the .sav file path:")
-    path = input("> ").strip().strip("\"").strip("'")
+    try:
+        path = input("> ").strip().strip("\"").strip("'")
+    except KeyboardInterrupt:
+        exit(0)
     songs = getSongs(path)
     if songs is None:
         print("Invalid save file")
         exit(1)
 
     print("\nEnter the number of the song to export:")
+    validSongs = []
     for i, song in enumerate(songs):
+        # Empty songs cause a crash when selected
+        # so just don't show them.
+        if songIsEmpty(song):
+            continue
+        validSongs.append(i)
         print(f"- {i + 1}{"*" if song["modified"] else ""}: {song["name"]}")
-    selection = int(input("> ")) - 1
+    try:
+        selection = int(input("> ")) - 1
+    except KeyboardInterrupt:
+        exit(0)
+    if selection not in validSongs:
+        print("Invalid selection.")
+        exit(1)
+
     exportSong(songs[selection])
 
     print(f"Done > {songs[selection]["name"]}.mid")
